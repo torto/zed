@@ -1,6 +1,6 @@
 use anyhow::Result;
 use collections::HashMap;
-use git2::{BranchType, StatusShow};
+use git2::{BranchType, Buf, StatusShow};
 use parking_lot::Mutex;
 use serde_derive::{Deserialize, Serialize};
 use std::{
@@ -24,6 +24,8 @@ pub struct Branch {
 pub trait GitRepository: Send {
     fn reload_index(&self);
     fn load_index_text(&self, relative_file_path: &Path) -> Option<String>;
+
+    fn fetch(&self) -> Result<(), git2::Error>;
 
     /// Returns the URL of the remote with the given name.
     fn remote_url(&self, name: &str) -> Option<String>;
@@ -66,6 +68,20 @@ impl GitRepository for LibGitRepository {
         if let Ok(mut index) = self.index() {
             _ = index.read(false);
         }
+    }
+
+    fn fetch(&self) -> Result<(), git2::Error> {
+        println!("Calling fetch");
+        const REMOTE: &str = "origin";
+        // let branch_name = match self.branch_name() {
+        //     Some(branch_name) => branch_name,
+        //     None => String::from(""),
+        // };
+        // //
+        // let branch_name = self.remote(name, url).unwrap().default_branch();
+        // println!("{:#?}", branch_name);
+        // self.find_remote(REMOTE)?.fetch(&[branch_name], None, None)
+        Ok(())
     }
 
     fn load_index_text(&self, relative_file_path: &Path) -> Option<String> {
@@ -170,11 +186,13 @@ impl GitRepository for LibGitRepository {
     }
 
     fn branches(&self) -> Result<Vec<Branch>> {
+        let _ = self.fetch();
         let local_branches = self.branches(Some(BranchType::Local))?;
         let valid_branches = local_branches
             .filter_map(|branch| {
                 branch.ok().and_then(|(branch, _)| {
                     let name = branch.name().ok().flatten().map(Box::from)?;
+                    println!("{}", name);
                     let timestamp = branch.get().peel_to_commit().ok()?.time();
                     let unix_timestamp = timestamp.seconds();
                     let timezone_offset = timestamp.offset_minutes();
@@ -263,6 +281,10 @@ impl FakeGitRepository {
 
 impl GitRepository for FakeGitRepository {
     fn reload_index(&self) {}
+
+    fn fetch(&self) -> Result<(), git2::Error> {
+        Ok(())
+    }
 
     fn load_index_text(&self, path: &Path) -> Option<String> {
         let state = self.state.lock();
